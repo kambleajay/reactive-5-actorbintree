@@ -5,6 +5,7 @@ package actorbintree
 
 import akka.actor._
 import scala.collection.immutable.Queue
+import actorbintree.BinaryTreeSet.Insert
 
 object BinaryTreeSet {
 
@@ -52,11 +53,10 @@ object BinaryTreeSet {
 
 class BinaryTreeSet extends Actor {
   import BinaryTreeSet._
-  import BinaryTreeNode._
 
   def createRoot: ActorRef = context.actorOf(BinaryTreeNode.props(0, initiallyRemoved = true))
 
-  var root = createRoot
+  var root: ActorRef = createRoot
 
   // optional
   var pendingQueue = Queue.empty[Operation]
@@ -66,7 +66,9 @@ class BinaryTreeSet extends Actor {
 
   // optional
   /** Accepts `Operation` and `GC` messages. */
-  val normal: Receive = { case _ => ??? }
+  val normal: Receive = {
+    case Insert(caller, id, elem) => root ! Insert(caller, id, elem)
+  }
 
   // optional
   /** Handles messages while garbage collection is performed.
@@ -91,7 +93,6 @@ object BinaryTreeNode {
 
 class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor {
   import BinaryTreeNode._
-  import BinaryTreeSet._
 
   var subtrees = Map[Position, ActorRef]()
   var removed = initiallyRemoved
@@ -101,7 +102,11 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor {
 
   // optional
   /** Handles `Operation` messages and `CopyTo` requests. */
-  val normal: Receive = { case _ => ??? }
+  val normal: Receive = {
+    case Insert(caller, id, newElem) => {
+
+    }
+  }
 
   // optional
   /** `expected` is the set of ActorRefs whose replies we are waiting for,

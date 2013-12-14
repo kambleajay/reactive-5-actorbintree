@@ -12,6 +12,8 @@ libraryDependencies += "junit" % "junit" % "4.10" % "test"
 
 libraryDependencies += "org.scala-lang" % "scala-reflect" % "2.10.2"
 
+libraryDependencies += "org.specs2" %% "specs2" % "2.3.6" % "test"
+
 // This setting defines the project to which a solution is submitted. When creating a
 // handout, the 'createHandout' task will make sure that its value is correct.
 submitProjectName := "actorbintree"
