@@ -122,7 +122,7 @@ class BinaryTreeSuite(_system: ActorSystem) extends TestKit(_system) with FunSui
 
     ops foreach { op =>
       topNode ! op
-      if (rnd.nextDouble() < 0.1) topNode ! GC
+      //if (rnd.nextDouble() < 0.1) topNode ! GC
     }
     receiveN(requester, ops, expectedReplies)
   }

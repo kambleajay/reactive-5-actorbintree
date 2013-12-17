@@ -6,21 +6,26 @@ import actorbintree.BinaryTreeNode._
 
 class Test extends Actor {
 
-  val binTree = context.actorOf(Props[BinaryTreeSet])
+  val binTree1 = context.actorOf(BinaryTreeNode.props(0, initiallyRemoved = false))
+  val binTree2 = context.actorOf(BinaryTreeNode.props(0, initiallyRemoved = true))
 
-  binTree ! Insert(self, 1, 10)
-  binTree ! Insert(self, 2, 20)
-  binTree ! Contains(self, 3, 40)
-  binTree ! Remove(self, 4, 20)
-  binTree ! Contains(self, 5, 10)
-  binTree ! GC
-  binTree ! Insert(self, 6, 50)
-  binTree ! Contains(self, 7, 10)
-  binTree ! Contains(self, 8, 50)
+  binTree1 ! Insert(self, 1, 10)
+  binTree1 ! Insert(self, 2, 20)
+  binTree1 ! Contains(self, 3, 10)
+  binTree1 ! Contains(self, 4, 20)
+
+  binTree1 ! CopyTo(binTree2)
+
+
 
   def receive: Receive = {
     case OperationFinished(id) => println(s"finished $id")
     case ContainsResult(id, answer) => println(s"contains $id is $answer")
+    case CopyFinished => {
+      println("copy finish")
+      binTree2 ! Contains(self, 5, 10)
+      binTree2 ! Contains(self, 6, 20)
+    }
   }
 
 }

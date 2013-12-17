@@ -81,8 +81,8 @@ class BinaryTreeSet extends Actor with ActorLogging {
     case Remove(caller, id, elem) => root ! Remove(caller, id, elem)
     case GC => {
       val newRoot = createRoot
-      root ! CopyTo(newRoot)
       context.become(garbageCollecting(newRoot))
+      root ! CopyTo(newRoot)
     }
   }
 
@@ -97,15 +97,16 @@ class BinaryTreeSet extends Actor with ActorLogging {
     case Remove(caller, id, elem) => pendingQueue.enqueue(Remove(caller, id, elem))
     case CopyFinished => {
       //println("tree copy finished!")
-      root ! PoisonPill
-      root = newRoot
-
-      context.become(normal)
 
       while (!pendingQueue.isEmpty) {
         //println(pendingQueue)
-        root ! pendingQueue.dequeue
+        newRoot ! pendingQueue.dequeue
       }
+      assert(pendingQueue.isEmpty)
+
+      context.stop(root)
+      root = newRoot
+      context.become(normal)
     }
     case GC => ()
   }
@@ -136,9 +137,6 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   var left: Option[ActorRef] = None
   var right: Option[ActorRef] = None
-
-  var pendingCopy = 0
-  var selfInsert = false
 
   // optional
   def receive = normal
@@ -179,29 +177,30 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
     }
 
     case CopyTo(newRoot) => {
-      if (!removed) {
-        newRoot ! Insert(self, System.currentTimeMillis.toInt, elem)
-      } else {
-        selfInsert = true
-      }
-
       (left, right) match {
-        case (None, None) => sender ! CopyFinished
+        case (None, None) => {
+          if(removed) {
+            sender ! CopyFinished
+          } else {
+            context.become(copying(sender, Set(), removed))
+            newRoot ! Insert(self, elem, elem)
+          }
+        }
         case (Some(left), Some(right)) => {
-          pendingCopy = 2 
-          context.become(copying(sender, Set(left, right)))
-          left ! CopyTo(newRoot) 
-          right ! CopyTo(newRoot)  
+          context.become(copying(sender, Set(left, right), removed))
+          left ! CopyTo(newRoot)
+          right ! CopyTo(newRoot)
+          insertSelf(newRoot)
         }
         case (Some(left), None) => {
-          pendingCopy = 1
-          context.become(copying(sender, Set(left)))
-          left ! CopyTo(newRoot) 
+          context.become(copying(sender, Set(left), removed))
+          left ! CopyTo(newRoot)
+          insertSelf(newRoot)
         }
         case (None, Some(right)) => {
-          pendingCopy = 1
-          context.become(copying(sender, Set(right)))
-          right ! CopyTo(newRoot) 
+          context.become(copying(sender, Set(right), removed))
+          right ! CopyTo(newRoot)
+          insertSelf(newRoot)
         }
       }
     }
@@ -212,6 +211,14 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
       context.stop(self)
     }
 
+  }
+
+  def insertSelf(newRoot: ActorRef) {
+    if (!removed) {
+      newRoot ! Insert(self, elem, elem)
+    } else {
+      self ! OperationFinished(0)
+    }
   }
 
   def insertInLeft(caller: ActorRef, id: Int, newElem: Int) {
@@ -274,23 +281,27 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
   /** `expected` is the set of ActorRefs whose replies we are waiting for,
     * `insertConfirmed` tracks whether the copy of this node to the new tree has been confirmed.
     */
-  def copying(caller: ActorRef, expected: Set[ActorRef]): Receive = {
-    
+  def copying(caller: ActorRef, expected: Set[ActorRef], insertConfirmed: Boolean): Receive = {
+
     case CopyFinished => {
-      pendingCopy = pendingCopy - 1
+      val currentExpected = expected - sender
       //println(s"copy finished -> $elem ($pendingCopy, $selfInsert)")
-      if (pendingCopy == 0 && selfInsert) {
-        context.become(normal)
+      if (currentExpected.isEmpty && insertConfirmed) {
         caller ! CopyFinished
+        context.become(normal)
+      } else {
+        context.become(copying(caller, currentExpected, insertConfirmed))
       }
     }
-    
+
     case OperationFinished(id) => {
-      selfInsert = true
+
       //println(s"ops finished -> $elem ($pendingCopy, $selfInsert)")
-      if (pendingCopy == 0 && selfInsert) {
-        context.become(normal)
+      if (expected.isEmpty) {
         caller ! CopyFinished
+        context.become(normal)
+      } else {
+        context.become(copying(caller, expected, true))
       }
     }
   }
