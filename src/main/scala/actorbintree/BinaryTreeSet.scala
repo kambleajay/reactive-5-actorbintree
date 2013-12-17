@@ -32,21 +32,18 @@ object BinaryTreeSet {
     * is completed.
     */
   case class Insert(requester: ActorRef, id: Int, elem: Int) extends Operation
-  case class InsertPending(requester: ActorRef, id: Int, elem: Int) extends Operation
 
   /** Request with identifier `id` to check whether an element `elem` is present
     * in the tree. The actor at reference `requester` should be notified when
     * this operation is completed.
     */
   case class Contains(requester: ActorRef, id: Int, elem: Int) extends Operation
-  case class ContainsPending(requester: ActorRef, id: Int, elem: Int) extends Operation
 
   /** Request with identifier `id` to remove the element `elem` from the tree.
     * The actor at reference `requester` should be notified when this operation
     * is completed.
     */
   case class Remove(requester: ActorRef, id: Int, elem: Int) extends Operation
-  case class RemovePending(requester: ActorRef, id: Int, elem: Int) extends Operation
 
   /** Request to perform garbage collection */
   case object GC
@@ -89,38 +86,26 @@ class BinaryTreeSet extends Actor with ActorLogging {
     }
   }
 
-  def processPending: Receive = {
-    case InsertPending(caller, id, elem) => root ! Insert(caller, id, elem)
-    case ContainsPending(caller, id, elem) => root ! Contains(caller, id, elem)
-    case RemovePending(caller, id, elem) => root ! Remove(caller, id, elem)
-
-    case Insert(caller, id, elem) => pendingQueue.enqueue(InsertPending(caller, id, elem))
-    case Contains(caller, id, elem) => pendingQueue.enqueue(ContainsPending(caller, id, elem))
-    case Remove(caller, id, elem) => pendingQueue.enqueue(RemovePending(caller, id, elem))
-
-    case GC => ()
-  }
-
   // optional
   /** Handles messages while garbage collection is performed.
     * `newRoot` is the root of the new binary tree where we want to copy
     * all non-removed elements into.
     */
   def garbageCollecting(newRoot: ActorRef): Receive = {
-    case Insert(caller, id, elem) => pendingQueue.enqueue(InsertPending(caller, id, elem))
-    case Contains(caller, id, elem) => pendingQueue.enqueue(ContainsPending(caller, id, elem))
-    case Remove(caller, id, elem) => pendingQueue.enqueue(RemovePending(caller, id, elem))
+    case Insert(caller, id, elem) => pendingQueue.enqueue(Insert(caller, id, elem))
+    case Contains(caller, id, elem) => pendingQueue.enqueue(Contains(caller, id, elem))
+    case Remove(caller, id, elem) => pendingQueue.enqueue(Remove(caller, id, elem))
     case CopyFinished => {
+      //println("tree copy finished!")
       root ! PoisonPill
       root = newRoot
 
-      context.become(processPending)
+      context.become(normal)
 
       while (!pendingQueue.isEmpty) {
-        self ! pendingQueue.dequeue
+        //println(pendingQueue)
+        root ! pendingQueue.dequeue
       }
-
-      context.become(normal)
     }
     case GC => ()
   }
@@ -153,7 +138,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
   var right: Option[ActorRef] = None
 
   var pendingCopy = 0
-  var selfInsertDone = false
+  var selfInsert = false
 
   // optional
   def receive = normal
@@ -194,17 +179,31 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
     }
 
     case CopyTo(newRoot) => {
-      val expected = Seq(left, right).filter(_.isDefined).map(_.get).toSet
-      pendingCopy = expected.size
-      var insertDone = false
       if (!removed) {
         newRoot ! Insert(self, System.currentTimeMillis.toInt, elem)
       } else {
-        insertDone = true
+        selfInsert = true
       }
-      if (left.isDefined) left.get ! CopyTo(newRoot)
-      if (right.isDefined) right.get ! CopyTo(newRoot)
-      context.become(copying(sender, expected, insertDone))
+
+      (left, right) match {
+        case (None, None) => sender ! CopyFinished
+        case (Some(left), Some(right)) => {
+          pendingCopy = 2 
+          context.become(copying(sender, Set(left, right)))
+          left ! CopyTo(newRoot) 
+          right ! CopyTo(newRoot)  
+        }
+        case (Some(left), None) => {
+          pendingCopy = 1
+          context.become(copying(sender, Set(left)))
+          left ! CopyTo(newRoot) 
+        }
+        case (None, Some(right)) => {
+          pendingCopy = 1
+          context.become(copying(sender, Set(right)))
+          right ! CopyTo(newRoot) 
+        }
+      }
     }
 
     case PoisonPill => {
@@ -275,16 +274,22 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
   /** `expected` is the set of ActorRefs whose replies we are waiting for,
     * `insertConfirmed` tracks whether the copy of this node to the new tree has been confirmed.
     */
-  def copying(caller: ActorRef, expected: Set[ActorRef], insertConfirmed: Boolean): Receive = {
+  def copying(caller: ActorRef, expected: Set[ActorRef]): Receive = {
+    
     case CopyFinished => {
       pendingCopy = pendingCopy - 1
-      if (pendingCopy == 0 && selfInsertDone) {
+      //println(s"copy finished -> $elem ($pendingCopy, $selfInsert)")
+      if (pendingCopy == 0 && selfInsert) {
+        context.become(normal)
         caller ! CopyFinished
       }
     }
-    case OperationFinished => {
-      selfInsertDone = true
-      if (pendingCopy == 0 && selfInsertDone) {
+    
+    case OperationFinished(id) => {
+      selfInsert = true
+      //println(s"ops finished -> $elem ($pendingCopy, $selfInsert)")
+      if (pendingCopy == 0 && selfInsert) {
+        context.become(normal)
         caller ! CopyFinished
       }
     }
