@@ -88,9 +88,9 @@ class BinaryTreeSet extends Actor with ActorLogging {
     * all non-removed elements into.
     */
   def garbageCollecting(newRoot: ActorRef): Receive = LoggingReceive {
-    case Insert(caller, id, elem) => pendingQueue.enqueue(Insert(caller, id, elem))
-    case Contains(caller, id, elem) => pendingQueue.enqueue(Contains(caller, id, elem))
-    case Remove(caller, id, elem) => pendingQueue.enqueue(Remove(caller, id, elem))
+    case insert@Insert(caller, id, elem) => pendingQueue.enqueue(insert)
+    case contains@Contains(caller, id, elem) => pendingQueue.enqueue(contains)
+    case remove@Remove(caller, id, elem) => pendingQueue.enqueue(remove)
     case CopyFinished => {
       //println("tree copy finished!")
 
@@ -100,7 +100,7 @@ class BinaryTreeSet extends Actor with ActorLogging {
       }
       assert(pendingQueue.isEmpty)
 
-      root ! PoisonPill
+      context.stop(root)
       root = newRoot
       context.become(normal)
     }

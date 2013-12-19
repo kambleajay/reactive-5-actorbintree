@@ -46,6 +46,9 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
         insertInLeft(caller, id, newElem)
       } else if (newElem > elem) {
         insertInRight(caller, id, newElem)
+      } else if(newElem == elem && removed) {
+        removed = false
+        caller ! OperationFinished(id)
       } else {
         caller ! OperationFinished(id)
       }
@@ -74,6 +77,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
     }
 
     case CopyTo(newRoot) => {
+
       (removed, left, right) match {
         case (true, None, None) => {
           sender ! CopyFinished
@@ -112,6 +116,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
           newRoot ! Insert(self, elem, elem)
         }
       }
+
     }
 
     case PoisonPill => {
@@ -124,7 +129,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   def insertInLeft(caller: ActorRef, id: Int, newElem: Int) {
     left match {
-      case Some(lnode) => lnode ! Insert(caller, id, newElem)
+      case Some(node) => node ! Insert(caller, id, newElem)
       case None => {
         left = Some(context.actorOf(BinaryTreeNode.props(newElem, false)))
         caller ! OperationFinished(id)
@@ -134,7 +139,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   def insertInRight(caller: ActorRef, id: Int, newElem: Int) {
     right match {
-      case Some(rnode) => rnode ! Insert(caller, id, newElem)
+      case Some(node) => node ! Insert(caller, id, newElem)
       case None => {
         right = Some(context.actorOf(BinaryTreeNode.props(newElem, false)))
         caller ! OperationFinished(id)
@@ -144,7 +149,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   def containsInLeft(caller: ActorRef, id: Int, elemToMatch: Int) {
     left match {
-      case Some(lnode) => lnode ! Contains(caller, id, elemToMatch)
+      case Some(node) => node ! Contains(caller, id, elemToMatch)
       case None => {
         caller ! ContainsResult(id, false)
       }
@@ -153,7 +158,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   def containsInRight(caller: ActorRef, id: Int, elemToMatch: Int) {
     right match {
-      case Some(rnode) => rnode ! Contains(caller, id, elemToMatch)
+      case Some(node) => node ! Contains(caller, id, elemToMatch)
       case None => {
         caller ! ContainsResult(id, false)
       }
@@ -162,7 +167,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   def removeFromLeft(caller: ActorRef, id: Int, elemToRemove: Int) {
     left match {
-      case Some(lnode) => lnode ! Remove(caller, id, elemToRemove)
+      case Some(node) => node ! Remove(caller, id, elemToRemove)
       case None => {
         caller ! OperationFinished(id)
       }
@@ -171,7 +176,7 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor wit
 
   def removeFromRight(caller: ActorRef, id: Int, elemToRemove: Int) {
     right match {
-      case Some(rnode) => rnode ! Remove(caller, id, elemToRemove)
+      case Some(node) => node ! Remove(caller, id, elemToRemove)
       case None => {
         caller ! OperationFinished(id)
       }
